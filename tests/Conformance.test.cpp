@@ -20,6 +20,7 @@
 #include "doctest.h"
 #include "ScopedFlags.h"
 #include "ConformanceIrHooks.h"
+#include "ForeignTableHost.h"
 
 #include <cstdlib>
 #include <fstream>
@@ -1310,6 +1311,11 @@ TEST_CASE("Tables")
             lua_setglobal(L, "makelud");
         }
     );
+}
+
+TEST_CASE("ForeignTable")
+{
+    runConformance("foreigntable.luau", [](lua_State* L) { ForeignTableHost::registerGlobals(L); });
 }
 
 TEST_CASE("PatternMatch")
