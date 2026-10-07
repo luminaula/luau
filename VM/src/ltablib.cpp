@@ -6,6 +6,7 @@
 #include "lnumutils.h"
 #include "lstate.h"
 #include "ltable.h"
+#include "lforeign.h"
 #include "lstring.h"
 #include "lgc.h"
 #include "ldebug.h"
@@ -57,6 +58,19 @@ static int maxn(lua_State* L)
 
     LuaTable* t = hvalue(L->base);
 
+    if (LUAU_UNLIKELY(isforeigntable(t)))
+    {
+        lua_pushnil(L);
+        while (lua_next(L, 1))
+        {
+            if (lua_type(L, -2) == LUA_TNUMBER && lua_tonumber(L, -2) > max)
+                max = lua_tonumber(L, -2);
+            lua_pop(L, 1);
+        }
+        lua_pushnumber(L, max);
+        return 1;
+    }
+
     for (int i = 0; i < t->sizearray; i++)
     {
         if (!ttisnil(&t->array[i]))
@@ -89,6 +103,9 @@ static int getn(lua_State* L)
 
 static bool shouldsparsemove(LuaTable* src, LuaTable* dst, int n)
 {
+    if (isforeigntable(src) || isforeigntable(dst))
+        return false;
+
     int srcelems = src->sizearray + sizenode(src);
     int dstelems = dst->sizearray + sizenode(dst);
     int maxelems = srcelems > dstelems ? srcelems : dstelems;
@@ -118,7 +135,7 @@ static void moveelements(lua_State* L, int srct, int dstt, int f, int e, int t, 
     LuaTable* src = hvalue(L->base + (srct - 1));
     LuaTable* dst = hvalue(L->base + (dstt - 1));
 
-    if (dst->readonly)
+    if (dst->readonly && !isforeigntable(dst))
         luaG_readonlyerror(L);
 
     int n = e - f + 1; // number of elements to move
@@ -234,7 +251,15 @@ static int tinsert(lua_State* L)
 
         // move up elements if necessary
         if (1 <= pos && pos <= n)
+        {
+            ForeignTableData* d = luaFT_of(L->base);
+            if (d && d->cb->insert)
+            {
+                luaFT_insert(L, d, pos);
+                return 0;
+            }
             moveelements(L, 1, 1, pos, n, pos + 1, /* sparsemove */ false);
+        }
         break;
     }
     default:
@@ -254,7 +279,15 @@ static int tremove(lua_State* L)
 
     if (!(1 <= pos && pos <= n)) // position is outside bounds?
         return 0;                // nothing to remove
-    lua_rawgeti(L, 1, pos);      // result = t[pos]
+
+    ForeignTableData* d = luaFT_of(L->base);
+    if (d && d->cb->remove)
+    {
+        luaFT_remove(L, d, pos);
+        return 1;
+    }
+
+    lua_rawgeti(L, 1, pos); // result = t[pos]
 
     moveelements(L, 1, 1, pos + 1, n, pos, /* sparsemove */ false);
 
@@ -286,12 +319,12 @@ static int tmove(lua_State* L)
 
         LuaTable* dst = hvalue(L->base + (tt - 1));
 
-        if (dst->readonly) // also checked in moveelements, but this blocks resizes of r/o tables
+        if (dst->readonly && !isforeigntable(dst)) // also checked in moveelements, but this blocks resizes of r/o tables
             luaG_readonlyerror(L);
 
         bool sparsemove = DFFlag::LuauTableMoveTimeoutFix && shouldsparsemove(hvalue(L->base), dst, n);
 
-        if (t > 0 && (t - 1) <= dst->sizearray && (t - 1 + n) > dst->sizearray)
+        if (t > 0 && (t - 1) <= dst->sizearray && (t - 1 + n) > dst->sizearray && !isforeigntable(dst))
         { // grow the destination table array
             luaH_resizearray(L, dst, t - 1 + n);
         }
@@ -396,7 +429,7 @@ typedef int (*SortPredicate)(lua_State* L, const TValue* l, const TValue* r);
 
 static int sort_func(lua_State* L, const TValue* l, const TValue* r)
 {
-    LUAU_ASSERT(L->top == L->base + 2); // table, function
+    LUAU_ASSERT(L->top >= L->base + 2); // table, function
 
     setobj2s(L, L->top, &L->base[1]);
     setobj2s(L, L->top + 1, l);
@@ -547,10 +580,45 @@ static void sort_rec(lua_State* L, LuaTable* t, int l, int u, int limit, SortPre
     }
 }
 
+static int tsort_foreign(lua_State* L)
+{
+    int n = lua_objlen(L, 1);
+
+    SortPredicate pred = luaV_lessthan;
+    if (!lua_isnoneornil(L, 2))
+    {
+        luaL_checktype(L, 2, LUA_TFUNCTION);
+        pred = sort_func;
+    }
+    lua_settop(L, 2);
+
+    if (n > 1)
+    {
+        // the elements are sorted in a plain table and written back
+        lua_createtable(L, n, 0);
+        for (int i = 1; i <= n; i++)
+        {
+            lua_rawgeti(L, 1, i);
+            lua_rawseti(L, 3, i);
+        }
+
+        sort_rec(L, hvalue(L->top - 1), 0, n - 1, n, pred);
+
+        for (int i = 1; i <= n; i++)
+        {
+            lua_rawgeti(L, 3, i);
+            lua_rawseti(L, 1, i);
+        }
+    }
+    return 0;
+}
+
 static int tsort(lua_State* L)
 {
     luaL_checktype(L, 1, LUA_TTABLE);
     LuaTable* t = hvalue(L->base);
+    if (LUAU_UNLIKELY(isforeigntable(t)))
+        return tsort_foreign(L);
     int n = luaH_getn(t);
     if (t->readonly)
         luaG_readonlyerror(L);
@@ -605,6 +673,26 @@ static int tfind(lua_State* L)
 
     LuaTable* t = hvalue(L->base);
 
+    if (LUAU_UNLIKELY(isforeigntable(t)))
+    {
+        for (int i = init;; ++i)
+        {
+            if (lua_rawgeti(L, 1, i) == LUA_TNIL)
+                break;
+
+            if (lua_equal(L, -1, 2))
+            {
+                lua_pushinteger(L, i);
+                return 1;
+            }
+
+            lua_pop(L, 1);
+        }
+
+        lua_pushnil(L);
+        return 1;
+    }
+
     for (int i = init;; ++i)
     {
         const TValue* e = luaH_getnum(t, i);
@@ -629,6 +717,12 @@ static int tclear(lua_State* L)
     luaL_checktype(L, 1, LUA_TTABLE);
 
     LuaTable* tt = hvalue(L->base);
+    if (LUAU_UNLIKELY(isforeigntable(tt)))
+    {
+        lua_cleartable(L, 1);
+        return 0;
+    }
+
     if (tt->readonly)
         luaG_readonlyerror(L);
 
@@ -639,6 +733,7 @@ static int tclear(lua_State* L)
 static int tfreeze(lua_State* L)
 {
     luaL_checktype(L, 1, LUA_TTABLE);
+    luaL_argcheck(L, !lua_isforeigntable(L, 1), 1, "cannot freeze a foreign table");
     luaL_argcheck(L, !lua_getreadonly(L, 1), 1, "table is already frozen");
     luaL_argcheck(L, !luaL_getmetafield(L, 1, "__metatable"), 1, "table has a protected metatable");
 
@@ -660,6 +755,12 @@ static int tclone(lua_State* L)
 {
     luaL_checktype(L, 1, LUA_TTABLE);
     luaL_argcheck(L, !luaL_getmetafield(L, 1, "__metatable"), 1, "table has a protected metatable");
+
+    if (LUAU_UNLIKELY(lua_isforeigntable(L, 1)))
+    {
+        lua_clonetable(L, 1);
+        return 1;
+    }
 
     LuaTable* tt = luaH_clone(L, hvalue(L->base));
 
