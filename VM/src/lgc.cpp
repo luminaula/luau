@@ -5,6 +5,7 @@
 #include "lobject.h"
 #include "lstate.h"
 #include "ltable.h"
+#include "lforeign.h"
 #include "lfunc.h"
 #include "lstring.h"
 #include "ldo.h"
@@ -548,7 +549,7 @@ static size_t propagatemark(global_State* g)
         if (traversetable(g, h)) // table is weak?
             black2gray(o);       // keep it gray
 
-        return sizeof(LuaTable) + sizeof(TValue) * h->sizearray + sizeof(LuaNode) * (h->node == &luaH_dummynode ? 0 : sizenode(h));
+        return sizeof(LuaTable) + sizeforeigntail(h) + sizeof(TValue) * h->sizearray + sizeof(LuaNode) * (h->node == &luaH_dummynode ? 0 : sizenode(h));
     }
     case LUA_TFUNCTION:
     {
@@ -693,7 +694,7 @@ static size_t cleartable(lua_State* L, GCObject* l)
     {
         LuaTable* h = gco2h(l);
 
-        work += sizeof(LuaTable) + sizeof(TValue) * h->sizearray + sizeof(LuaNode) * (h->node == &luaH_dummynode ? 0 : sizenode(h));
+        work += sizeof(LuaTable) + sizeforeigntail(h) + sizeof(TValue) * h->sizearray + sizeof(LuaNode) * (h->node == &luaH_dummynode ? 0 : sizenode(h));
 
         int i = h->sizearray;
         while (i--)
