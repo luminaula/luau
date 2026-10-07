@@ -23,6 +23,7 @@
 #include "ScopedFlags.h"
 #include "BufferCage.h"
 #include "ConformanceIrHooks.h"
+#include "ForeignTableHost.h"
 
 #include <cstdlib>
 #include <fstream>
@@ -1392,6 +1393,11 @@ TEST_CASE("Tables")
         nullptr,
         lua_newstate(limitedRealloc, nullptr)
     );
+}
+
+TEST_CASE("ForeignTable")
+{
+    runConformance("foreigntable.luau", [](lua_State* L) { ForeignTableHost::registerGlobals(L); });
 }
 
 TEST_CASE("PatternMatch")

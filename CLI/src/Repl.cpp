@@ -21,6 +21,8 @@
 
 #include "isocline.h"
 
+#include "../../tests/ForeignTableHost.h"
+
 #include <memory>
 #include <string>
 #include <string_view>
@@ -225,6 +227,7 @@ void setupState(lua_State* L)
     lua_pushvalue(L, LUA_GLOBALSINDEX);
     luaL_register(L, NULL, funcs);
     lua_pop(L, 1);
+    ForeignTableHost::registerGlobals(L);
 
     luaopen_require(L, requireConfigInit, createCliRequireContext(L));
 
