@@ -982,9 +982,13 @@ static int luauF_rawequal(lua_State* L, StkId res, TValue* arg0, int nresults, S
 
 static int luauF_rawget(lua_State* L, StkId res, TValue* arg0, int nresults, StkId args, int nparams)
 {
-    if (nparams >= 2 && nresults <= 1 && ttistable(arg0) && !isforeigntable(hvalue(arg0)))
+    if (nparams >= 2 && nresults <= 1 && ttistable(arg0))
     {
-        setobj2s(L, res, luaH_get(hvalue(arg0), args));
+        const TValue* found = luaH_get(hvalue(arg0), args);
+        // the storage of a foreign table is empty, so only a miss can be a foreign read
+        if (LUAU_UNLIKELY(ttisnil(found) && isforeigntable(hvalue(arg0))))
+            return -1;
+        setobj2s(L, res, found);
         return 1;
     }
 
@@ -1035,7 +1039,7 @@ static int luauF_tinsert(lua_State* L, StkId res, TValue* arg0, int nresults, St
 
 static int luauF_tunpack(lua_State* L, StkId res, TValue* arg0, int nresults, StkId args, int nparams)
 {
-    if (nparams >= 1 && nresults < 0 && ttistable(arg0) && !isforeigntable(hvalue(arg0)))
+    if (nparams >= 1 && nresults < 0 && ttistable(arg0))
     {
         LuaTable* t = hvalue(arg0);
         int n = -1;
@@ -1047,6 +1051,9 @@ static int luauF_tunpack(lua_State* L, StkId res, TValue* arg0, int nresults, St
 
         if (n >= 0 && n <= t->sizearray && cast_int(L->stack_last - res) >= n && n + nparams <= LUAI_MAXCSTACK)
         {
+            // the storage of a foreign table is empty: only an empty answer can be a foreign table's
+            if (LUAU_UNLIKELY(n == 0 && isforeigntable(t)))
+                return -1;
             TValue* array = t->array;
             for (int i = 0; i < n; ++i)
                 setobj2s(L, res + i, array + i);
@@ -1173,9 +1180,10 @@ static int luauF_rawlen(lua_State* L, StkId res, TValue* arg0, int nresults, Stk
         if (ttistable(arg0))
         {
             LuaTable* h = hvalue(arg0);
-            if (LUAU_UNLIKELY(isforeigntable(h)))
+            int n = luaH_getn(h);
+            if (LUAU_UNLIKELY(n == 0 && isforeigntable(h)))
                 return -1;
-            setnvalue(res, double(luaH_getn(h)));
+            setnvalue(res, double(n));
             return 1;
         }
         else if (ttisstring(arg0))
@@ -1221,9 +1229,10 @@ static int luauF_getmetatable(lua_State* L, StkId res, TValue* arg0, int nresult
         LuaTable* mt = NULL;
         if (ttistable(arg0))
         {
-            if (LUAU_UNLIKELY(isforeigntable(hvalue(arg0))))
-                return -1;
             mt = hvalue(arg0)->metatable;
+            // the metatable of a foreign table is the host's own and is not answered
+            if (LUAU_UNLIKELY(mt && isforeigntable(hvalue(arg0))))
+                return -1;
         }
         else if (ttisuserdata(arg0))
             mt = uvalue(arg0)->metatable;

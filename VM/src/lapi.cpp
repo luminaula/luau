@@ -589,9 +589,13 @@ int lua_objlen(lua_State* L, int idx)
     case LUA_TBUFFER:
         return bufvalue(o)->len;
     case LUA_TTABLE:
-        if (LUAU_UNLIKELY(isforeigntable(hvalue(o))))
+    {
+        int n = luaH_getn(hvalue(o));
+        // the storage of a foreign table is empty, so only an empty answer is asked of the host
+        if (LUAU_UNLIKELY(n == 0 && isforeigntable(hvalue(o))))
             return luaFT_len(L, foreigndata(hvalue(o)));
-        return luaH_getn(hvalue(o));
+        return n;
+    }
     default:
         return 0;
     }
@@ -867,17 +871,18 @@ int lua_rawgetfield(lua_State* L, int idx, const char* k)
     ensure_stack(L, 1);
     StkId t = index2addr(L, idx);
     api_check(L, ttistable(t));
-    if (LUAU_UNLIKELY(isforeigntable(hvalue(t))))
-    {
-        ForeignTableData* d = foreigndata(hvalue(t));
-        setsvalue(L, L->top, luaS_new(L, k));
-        api_incr_top(L);
-        luaFT_get(L, d);
-        return ttype(L->top - 1);
-    }
     TValue key;
     setsvalue(L, &key, luaS_new(L, k));
-    setobj2s(L, L->top, luaH_getstr(hvalue(t), tsvalue(&key)));
+    const TValue* found = luaH_getstr(hvalue(t), tsvalue(&key));
+    // the storage of a foreign table is empty, so only a miss is asked of the host
+    if (LUAU_UNLIKELY(ttisnil(found) && isforeigntable(hvalue(t))))
+    {
+        setobj2s(L, L->top, &key);
+        api_incr_top(L);
+        luaFT_get(L, foreigndata(hvalue(t)));
+        return ttype(L->top - 1);
+    }
+    setobj2s(L, L->top, found);
     api_incr_top(L);
     return ttype(L->top - 1);
 }
@@ -887,12 +892,13 @@ int lua_rawget(lua_State* L, int idx)
     luaC_threadbarrier(L);
     StkId t = index2addr(L, idx);
     api_check(L, ttistable(t));
-    if (LUAU_UNLIKELY(isforeigntable(hvalue(t))))
+    const TValue* found = luaH_get(hvalue(t), L->top - 1);
+    if (LUAU_UNLIKELY(ttisnil(found) && isforeigntable(hvalue(t))))
     {
         luaFT_get(L, foreigndata(hvalue(t)));
         return ttype(L->top - 1);
     }
-    setobj2s(L, L->top - 1, luaH_get(hvalue(t), L->top - 1));
+    setobj2s(L, L->top - 1, found);
     return ttype(L->top - 1);
 }
 
@@ -902,15 +908,15 @@ int lua_rawgeti(lua_State* L, int idx, int n)
     ensure_stack(L, 1);
     StkId t = index2addr(L, idx);
     api_check(L, ttistable(t));
-    if (LUAU_UNLIKELY(isforeigntable(hvalue(t))))
+    const TValue* found = luaH_getnum(hvalue(t), n);
+    if (LUAU_UNLIKELY(ttisnil(found) && isforeigntable(hvalue(t))))
     {
-        ForeignTableData* d = foreigndata(hvalue(t));
         setnvalue(L->top, n);
         api_incr_top(L);
-        luaFT_get(L, d);
+        luaFT_get(L, foreigndata(hvalue(t)));
         return ttype(L->top - 1);
     }
-    setobj2s(L, L->top, luaH_getnum(hvalue(t), n));
+    setobj2s(L, L->top, found);
     api_incr_top(L);
     return ttype(L->top - 1);
 }
@@ -921,12 +927,7 @@ int lua_rawgetptagged(lua_State* L, int idx, void* p, int tag)
     ensure_stack(L, 1);
     StkId t = index2addr(L, idx);
     api_check(L, ttistable(t));
-    if (LUAU_UNLIKELY(isforeigntable(hvalue(t))))
-    {
-        setnilvalue(L->top);
-        api_incr_top(L);
-        return LUA_TNIL;
-    }
+    // the storage of a foreign table is empty: a pointer key reads as absent
     setobj2s(L, L->top, luaH_getp(hvalue(t), p, tag));
     api_incr_top(L);
     return ttype(L->top - 1);
@@ -1051,17 +1052,19 @@ void lua_rawsetfield(lua_State* L, int idx, const char* k)
     api_checknelems(L, 1);
     StkId t = index2addr(L, idx);
     api_check(L, ttistable(t));
-    if (LUAU_UNLIKELY(isforeigntable(hvalue(t))))
-    {
-        ForeignTableData* d = foreigndata(hvalue(t));
-        setsvalue(L, L->top, luaS_new(L, k));
-        api_incr_top(L);
-        lua_insert(L, -2);
-        luaFT_set(L, d);
-        return;
-    }
     if (hvalue(t)->readonly)
+    {
+        if (isforeigntable(hvalue(t)))
+        {
+            ForeignTableData* d = foreigndata(hvalue(t));
+            setsvalue(L, L->top, luaS_new(L, k));
+            api_incr_top(L);
+            lua_insert(L, -2);
+            luaFT_set(L, d);
+            return;
+        }
         luaG_readonlyerror(L);
+    }
     setobj2t(L, luaH_setstr(L, hvalue(t), luaS_new(L, k)), L->top - 1);
     luaC_barriert(L, hvalue(t), L->top - 1);
     L->top--;
@@ -1072,10 +1075,12 @@ void lua_rawset(lua_State* L, int idx)
     api_checknelems(L, 2);
     StkId t = index2addr(L, idx);
     api_check(L, ttistable(t));
-    if (LUAU_UNLIKELY(isforeigntable(hvalue(t))))
-        return luaFT_set(L, foreigndata(hvalue(t)));
     if (hvalue(t)->readonly)
+    {
+        if (isforeigntable(hvalue(t)))
+            return luaFT_set(L, foreigndata(hvalue(t)));
         luaG_readonlyerror(L);
+    }
     setobj2t(L, luaH_set(L, hvalue(t), L->top - 2), L->top - 1);
     luaC_barriert(L, hvalue(t), L->top - 1);
     L->top -= 2;
@@ -1086,16 +1091,18 @@ void lua_rawseti(lua_State* L, int idx, int n)
     api_checknelems(L, 1);
     StkId o = index2addr(L, idx);
     api_check(L, ttistable(o));
-    if (LUAU_UNLIKELY(isforeigntable(hvalue(o))))
-    {
-        ForeignTableData* d = foreigndata(hvalue(o));
-        setnvalue(L->top, n);
-        api_incr_top(L);
-        lua_insert(L, -2);
-        return luaFT_set(L, d);
-    }
     if (hvalue(o)->readonly)
+    {
+        if (isforeigntable(hvalue(o)))
+        {
+            ForeignTableData* d = foreigndata(hvalue(o));
+            setnvalue(L->top, n);
+            api_incr_top(L);
+            lua_insert(L, -2);
+            return luaFT_set(L, d);
+        }
         luaG_readonlyerror(L);
+    }
     setobj2t(L, luaH_setnum(L, hvalue(o), n), L->top - 1);
     luaC_barriert(L, hvalue(o), L->top - 1);
     L->top--;
@@ -1106,10 +1113,12 @@ void lua_rawsetptagged(lua_State* L, int idx, void* p, int tag)
     api_checknelems(L, 1);
     StkId o = index2addr(L, idx);
     api_check(L, ttistable(o));
-    if (LUAU_UNLIKELY(isforeigntable(hvalue(o))))
-        luaG_runerror(L, "cannot use a pointer as the key of a foreign table");
     if (hvalue(o)->readonly)
+    {
+        if (isforeigntable(hvalue(o)))
+            luaG_runerror(L, "cannot use a pointer as the key of a foreign table");
         luaG_readonlyerror(L);
+    }
     setobj2t(L, luaH_setp(L, hvalue(o), p, tag), L->top - 1);
     luaC_barriert(L, hvalue(o), L->top - 1);
     L->top--;
