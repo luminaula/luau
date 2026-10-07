@@ -293,6 +293,11 @@ local function run(minimal)
     assert(fails(function() t() end):find("call"))
     assert(fails(function() return t .. "x" end):find("concatenate"))
 
+    -- a foreign table is not usable as a metatable or as an environment
+    fails(setmetatable, {}, t)
+    fails(setfenv, 1, t)
+    assert(getmetatable(setmetatable({}, nil)) == nil)
+
     -- a foreign table is not a plain table: plain-table code paths see it through the same syntax
     local function readx(tt) return tt.x end
     local function writex(tt, v) tt.x = v end
