@@ -958,7 +958,8 @@ int lua_getreadonly(lua_State* L, int objindex)
     const TValue* o = index2addr(L, objindex);
     api_check(L, ttistable(o));
     LuaTable* t = hvalue(o);
-
+    // A foreign table marks itself in the same byte with FOREIGN_TABLE_FLAG (2). That mark is not a frozen state:
+    // the answer is 1 only for a table frozen with lua_setreadonly, and lua_setreadonly refuses a foreign table.
     if (FFlag::LuauFrozenMetaButterfly)
     {
         return luaH_getreadonly(t);
@@ -2233,13 +2234,38 @@ void lua_clonetable(lua_State* L, int idx)
     api_incr_top(L);
 }
 
+struct NewForeignTable
+{
+    const lua_ForeignTableCallbacks* callbacks;
+    void* ctx;
+    LuaTable* table;
+};
+
+static void newforeigntable(lua_State* L, void* ud)
+{
+    NewForeignTable* n = static_cast<NewForeignTable*>(ud);
+    n->table = luaFT_new(L, n->callbacks, n->ctx);
+}
+
 void lua_newforeigntable(lua_State* L, const lua_ForeignTableCallbacks* callbacks, void* ctx)
 {
     api_check(L, callbacks && callbacks->get && callbacks->set && callbacks->len && callbacks->next);
     luaC_checkGC(L);
     luaC_threadbarrier(L);
     ensure_stack(L, 1);
-    sethvalue(L, L->top, luaFT_new(L, callbacks, ctx));
+
+    // The table owns ctx from this call on. A table that cannot be allocated never reaches luaH_free, so the
+    // allocation runs protected and a failure hands ctx to release before the error continues.
+    NewForeignTable n = {callbacks, ctx, NULL};
+    int status = luaD_rawrunprotected(L, newforeigntable, &n);
+    if (LUAU_UNLIKELY(status != 0))
+    {
+        if (callbacks->release)
+            callbacks->release(ctx);
+        luaD_throw(L, status);
+    }
+
+    sethvalue(L, L->top, n.table);
     api_incr_top(L);
 }
 

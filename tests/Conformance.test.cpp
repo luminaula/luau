@@ -1400,6 +1400,151 @@ TEST_CASE("ForeignTable")
     runConformance("foreigntable.luau", [](lua_State* L) { ForeignTableHost::registerGlobals(L); });
 }
 
+namespace
+{
+struct CountedAllocator
+{
+    int allocationsLeft = 0;
+    bool limited = false;
+};
+
+void* countedRealloc(void* ud, void* ptr, size_t osize, size_t nsize)
+{
+    CountedAllocator* a = static_cast<CountedAllocator*>(ud);
+    if (nsize == 0)
+    {
+        free(ptr);
+        return nullptr;
+    }
+    if (a->limited && ptr == nullptr)
+    {
+        if (a->allocationsLeft == 0)
+            return nullptr;
+        a->allocationsLeft--;
+    }
+    return realloc(ptr, nsize);
+}
+
+int releasedContexts = 0;
+
+void countingRelease(void* ctx)
+{
+    releasedContexts++;
+}
+
+const lua_ForeignTableCallbacks& countingCallbacks()
+{
+    static const lua_ForeignTableCallbacks c = {
+        [](lua_State* L, void*) { lua_pushnil(L); },
+        [](lua_State*, void*) {},
+        [](lua_State*, void*) { return 0; },
+        [](lua_State*, void*) { return 0; },
+        nullptr,
+        nullptr,
+        nullptr,
+        countingRelease
+    };
+    return c;
+}
+} // namespace
+
+TEST_CASE("ForeignTableHeapAccounting")
+{
+    extern void luaC_enumheap(
+        lua_State * L,
+        void* context,
+        void (*node)(void* context, void* ptr, uint8_t tt, uint8_t memcat, size_t size, const char* name),
+        void (*edge)(void* context, void* from, void* to, const char* name)
+    );
+
+    StateRef globalState(luaL_newstate(), lua_close);
+    lua_State* L = globalState.get();
+
+    lua_createtable(L, 0, 0);
+    lua_newforeigntable(L, &countingCallbacks(), nullptr);
+
+    struct Seen
+    {
+        void* plain;
+        void* foreign;
+        size_t plainSize = 0;
+        size_t foreignSize = 0;
+    } seen;
+    seen.plain = const_cast<void*>(lua_topointer(L, -2));
+    seen.foreign = const_cast<void*>(lua_topointer(L, -1));
+
+    int before = lua_gc(L, LUA_GCCOUNTB, 0) + 1024 * lua_gc(L, LUA_GCCOUNT, 0);
+
+    luaC_enumheap(
+        L,
+        &seen,
+        [](void* ctx, void* gco, uint8_t tt, uint8_t memcat, size_t size, const char* name)
+        {
+            Seen& s = *static_cast<Seen*>(ctx);
+            if (gco == s.plain)
+                s.plainSize = size;
+            if (gco == s.foreign)
+                s.foreignSize = size;
+        },
+        [](void* ctx, void* from, void* to, const char* name) {}
+    );
+
+    CHECK(seen.plainSize > 0);
+    // the host record behind the header is part of the table's size
+    CHECK(seen.foreignSize == seen.plainSize + 2 * sizeof(void*));
+
+    // the allocator charges the same bytes the heap walk reports
+    lua_pop(L, 1);
+    lua_gc(L, LUA_GCCOLLECT, 0);
+    int after = lua_gc(L, LUA_GCCOUNTB, 0) + 1024 * lua_gc(L, LUA_GCCOUNT, 0);
+    CHECK(before - after == int(seen.foreignSize));
+}
+
+TEST_CASE("ForeignTableOutOfMemory")
+{
+    // fail each allocation the creation of a foreign table makes, one at a time: the host record is released
+    // exactly once and no table is left behind
+    for (int allowed = 0; allowed < 8; allowed++)
+    {
+        CountedAllocator allocator;
+        StateRef globalState(lua_newstate(countedRealloc, &allocator), lua_close);
+        lua_State* L = globalState.get();
+        luaL_openlibs(L);
+
+        releasedContexts = 0;
+        allocator.limited = true;
+        allocator.allocationsLeft = allowed;
+
+        lua_pushcfunction(
+            L,
+            [](lua_State* L)
+            {
+                lua_newforeigntable(L, &countingCallbacks(), nullptr);
+                return 1;
+            },
+            "make"
+        );
+        int status = lua_pcall(L, 0, 1, 0);
+        allocator.limited = false;
+
+        if (status == LUA_OK)
+        {
+            CHECK(releasedContexts == 0);
+            CHECK(lua_isforeigntable(L, -1));
+            lua_pop(L, 1);
+            lua_gc(L, LUA_GCCOLLECT, 0);
+            CHECK(releasedContexts == 1);
+            break;
+        }
+
+        CHECK(status == LUA_ERRMEM);
+        CHECK(releasedContexts == 1);
+        lua_pop(L, 1);
+        lua_gc(L, LUA_GCCOLLECT, 0);
+        CHECK(releasedContexts == 1);
+    }
+}
+
 TEST_CASE("PatternMatch")
 {
     runConformance("pm.luau");

@@ -506,6 +506,8 @@ typedef struct lua_ForeignTableCallbacks
     void (*release)(void* ctx);
 } lua_ForeignTableCallbacks;
 
+// ctx belongs to the new table from the call on: `release` receives it when the table is collected, and also when the
+// call itself raises (out of memory) before a table exists
 LUA_API void lua_newforeigntable(lua_State* L, const lua_ForeignTableCallbacks* callbacks, void* ctx);
 LUA_API int lua_isforeigntable(lua_State* L, int idx);
 // returns the context of a foreign table created with `callbacks` (NULL when the value is anything else)
