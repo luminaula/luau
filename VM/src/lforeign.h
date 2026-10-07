@@ -22,6 +22,9 @@ struct ForeignTableData
 #define foreigndata(t) (reinterpret_cast<ForeignTableData*>((t) + 1))
 #define sizeforeigntable (sizeof(LuaTable) + sizeof(ForeignTableData))
 
+// the bytes a table holds behind its LuaTable header that the array and hash parts do not account for
+#define sizeforeigntail(t) (isforeigntable(t) ? sizeof(ForeignTableData) : 0)
+
 // the ForeignTableData of a value that is a foreign table, NULL for any other value
 inline ForeignTableData* luaFT_of(const TValue* o)
 {
