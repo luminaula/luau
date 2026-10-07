@@ -471,6 +471,37 @@ LUA_API int lua_usesexport(lua_State* L, int idx);
 LUA_API void lua_cleartable(lua_State* L, int idx);
 LUA_API void lua_clonetable(lua_State* L, int idx);
 
+/*
+** Foreign tables: a value that behaves as a table of the embedder's storage. Reads, writes, length, iteration and
+** the table library on it call back into the host. Every callback runs inside a C function frame and finds its
+** operands on the stack as described per member. A callback that raises an error leaves the stack to the normal
+** error unwinding.
+*/
+typedef struct lua_ForeignTableCallbacks
+{
+    // key at -1; pushes the value (nil when absent)
+    void (*get)(lua_State* L, void* ctx);
+    // key at -2, value at -1; stores the value (nil removes the key). Leaves the stack as it found it
+    void (*set)(lua_State* L, void* ctx);
+    // returns a border of the array-like part (the largest n with t[n] ~= nil and t[n + 1] == nil, or 0)
+    int (*len)(lua_State* L, void* ctx);
+    // key at -1 (nil starts the traversal); pushes the next key and its value and returns 1, or pushes nothing and returns 0
+    int (*next)(lua_State* L, void* ctx);
+    // optional: value at -1; stores it at pos and shifts the elements pos..len up by one
+    void (*insert)(lua_State* L, void* ctx, int pos);
+    // optional: pushes the element at pos (nil when absent) and shifts the elements after it down by one
+    void (*remove)(lua_State* L, void* ctx, int pos);
+    // optional: removes every entry
+    void (*clear)(lua_State* L, void* ctx);
+    // optional: called when the foreign table is collected
+    void (*release)(void* ctx);
+} lua_ForeignTableCallbacks;
+
+LUA_API void lua_newforeigntable(lua_State* L, const lua_ForeignTableCallbacks* callbacks, void* ctx);
+LUA_API int lua_isforeigntable(lua_State* L, int idx);
+// returns the context of a foreign table created with `callbacks` (NULL when the value is anything else)
+LUA_API void* lua_toforeigntable(lua_State* L, int idx, const lua_ForeignTableCallbacks* callbacks);
+
 LUA_API lua_Alloc lua_getallocf(lua_State* L, void** ud);
 
 /*
