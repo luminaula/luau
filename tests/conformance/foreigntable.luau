@@ -395,6 +395,7 @@ local function run(minimal)
         assert(x.a.b.c == 2)
     end
     t, copy, big, arr, e, r, tl, st, words, ct, mv, mv2 = nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil
+    holes, rt, p, sk = nil, nil, nil, nil
     collectgarbage()
     collectgarbage()
     assert(hostlive() == live0, "leaked " .. (hostlive() - live0) .. " host tables")
