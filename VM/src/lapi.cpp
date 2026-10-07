@@ -589,13 +589,9 @@ int lua_objlen(lua_State* L, int idx)
     case LUA_TBUFFER:
         return bufvalue(o)->len;
     case LUA_TTABLE:
-    {
-        int n = luaH_getn(hvalue(o));
-        // the storage of a foreign table is empty, so only an empty answer is asked of the host
-        if (LUAU_UNLIKELY(n == 0 && isforeigntable(hvalue(o))))
+        if (LUAU_UNLIKELY(isforeigntable(hvalue(o))))
             return luaFT_len(L, foreigndata(hvalue(o)));
-        return n;
-    }
+        return luaH_getn(hvalue(o));
     default:
         return 0;
     }

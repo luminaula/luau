@@ -103,9 +103,6 @@ static int getn(lua_State* L)
 
 static bool shouldsparsemove(LuaTable* src, LuaTable* dst, int n)
 {
-    if (isforeigntable(src) || isforeigntable(dst))
-        return false;
-
     int srcelems = src->sizearray + sizenode(src);
     int dstelems = dst->sizearray + sizenode(dst);
     int maxelems = srcelems > dstelems ? srcelems : dstelems;
@@ -135,8 +132,11 @@ static void moveelements(lua_State* L, int srct, int dstt, int f, int e, int t, 
     LuaTable* src = hvalue(L->base + (srct - 1));
     LuaTable* dst = hvalue(L->base + (dstt - 1));
 
-    if (dst->readonly && !isforeigntable(dst))
-        luaG_readonlyerror(L);
+    if (dst->readonly)
+    {
+        if (!isforeigntable(dst))
+            luaG_readonlyerror(L);
+    }
 
     int n = e - f + 1; // number of elements to move
 
@@ -167,7 +167,8 @@ static void moveelements(lua_State* L, int srct, int dstt, int f, int e, int t, 
 
         luaC_barrierfast(L, dst);
     }
-    else if (DFFlag::LuauTableMoveTimeoutFix && sparsemove)
+    // a foreign table keeps its entries in the host, so the size of its own storage says nothing about them
+    else if (DFFlag::LuauTableMoveTimeoutFix && sparsemove && !isforeigntable(src) && !isforeigntable(dst))
     {
         int srcta = lua_absindex(L, srct);
         int dstta = lua_absindex(L, dstt);
@@ -236,7 +237,9 @@ static void moveelements(lua_State* L, int srct, int dstt, int f, int e, int t, 
 static int tinsert(lua_State* L)
 {
     luaL_checktype(L, 1, LUA_TTABLE);
-    int n = lua_objlen(L, 1);
+    LuaTable* t = hvalue(L->base);
+    bool foreign = isforeigntable(t);
+    int n = LUAU_UNLIKELY(foreign) ? lua_objlen(L, 1) : luaH_getn(t);
     int pos; // where to insert new element
     switch (lua_gettop(L))
     {
@@ -252,10 +255,9 @@ static int tinsert(lua_State* L)
         // move up elements if necessary
         if (1 <= pos && pos <= n)
         {
-            ForeignTableData* d = luaFT_of(L->base);
-            if (d && d->cb->insert)
+            if (LUAU_UNLIKELY(foreign) && foreigndata(t)->cb->insert)
             {
-                luaFT_insert(L, d, pos);
+                luaFT_insert(L, foreigndata(t), pos);
                 return 0;
             }
             moveelements(L, 1, 1, pos, n, pos + 1, /* sparsemove */ false);
@@ -274,16 +276,17 @@ static int tinsert(lua_State* L)
 static int tremove(lua_State* L)
 {
     luaL_checktype(L, 1, LUA_TTABLE);
-    int n = lua_objlen(L, 1);
+    LuaTable* t = hvalue(L->base);
+    bool foreign = isforeigntable(t);
+    int n = LUAU_UNLIKELY(foreign) ? lua_objlen(L, 1) : luaH_getn(t);
     int pos = luaL_optinteger(L, 2, n);
 
     if (!(1 <= pos && pos <= n)) // position is outside bounds?
         return 0;                // nothing to remove
 
-    ForeignTableData* d = luaFT_of(L->base);
-    if (d && d->cb->remove)
+    if (LUAU_UNLIKELY(foreign) && foreigndata(t)->cb->remove)
     {
-        luaFT_remove(L, d, pos);
+        luaFT_remove(L, foreigndata(t), pos);
         return 1;
     }
 
@@ -319,12 +322,20 @@ static int tmove(lua_State* L)
 
         LuaTable* dst = hvalue(L->base + (tt - 1));
 
-        if (dst->readonly && !isforeigntable(dst)) // also checked in moveelements, but this blocks resizes of r/o tables
-            luaG_readonlyerror(L);
+        if (dst->readonly) // also checked in moveelements, but this blocks resizes of r/o tables
+        {
+            if (!isforeigntable(dst))
+                luaG_readonlyerror(L);
+
+            // the host holds the elements of a foreign table: nothing to size, no sparse move
+            moveelements(L, 1, tt, f, e, t, false);
+            lua_pushvalue(L, tt);
+            return 1;
+        }
 
         bool sparsemove = DFFlag::LuauTableMoveTimeoutFix && shouldsparsemove(hvalue(L->base), dst, n);
 
-        if (t > 0 && (t - 1) <= dst->sizearray && (t - 1 + n) > dst->sizearray && !isforeigntable(dst))
+        if (t > 0 && (t - 1) <= dst->sizearray && (t - 1 + n) > dst->sizearray)
         { // grow the destination table array
             luaH_resizearray(L, dst, t - 1 + n);
         }
@@ -580,7 +591,7 @@ static void sort_rec(lua_State* L, LuaTable* t, int l, int u, int limit, SortPre
     }
 }
 
-static int tsort_foreign(lua_State* L)
+LUAU_NOINLINE static int tsort_foreign(lua_State* L)
 {
     int n = lua_objlen(L, 1);
 
@@ -617,11 +628,13 @@ static int tsort(lua_State* L)
 {
     luaL_checktype(L, 1, LUA_TTABLE);
     LuaTable* t = hvalue(L->base);
-    if (LUAU_UNLIKELY(isforeigntable(t)))
-        return tsort_foreign(L);
     int n = luaH_getn(t);
     if (t->readonly)
+    {
+        if (isforeigntable(t))
+            return tsort_foreign(L);
         luaG_readonlyerror(L);
+    }
 
     SortPredicate pred = luaV_lessthan;
     if (!lua_isnoneornil(L, 2)) // is there a 2nd argument?
