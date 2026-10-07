@@ -125,6 +125,19 @@ inline Value toValue(lua_State* L, int idx, const Key& key, int depth)
 {
     idx = lua_absindex(L, idx);
     Value v;
+
+    if (lua_isforeigntable(L, idx))
+    {
+        void* ctx = lua_toforeigntable(L, idx, &hostCallbacks());
+        if (!ctx)
+            ctx = lua_toforeigntable(L, idx, &minimalHostCallbacks());
+        if (!ctx)
+            luaL_error(L, "commons: the table stored under '%s' belongs to another host", describeKey(key).c_str());
+        v.kind = Value::Node;
+        v.t = static_cast<Ctx*>(ctx)->t;
+        return v;
+    }
+
     switch (lua_type(L, idx))
     {
     case LUA_TNIL:
@@ -163,14 +176,6 @@ inline Value toValue(lua_State* L, int idx, const Key& key, int depth)
     }
     case LUA_TTABLE:
     {
-        if (void* ctx = lua_toforeigntable(L, idx, &hostCallbacks()))
-        {
-            v.kind = Value::Node;
-            v.t = static_cast<Ctx*>(ctx)->t;
-            break;
-        }
-        if (lua_isforeigntable(L, idx))
-            luaL_error(L, "commons: the table stored under '%s' belongs to another host", describeKey(key).c_str());
         if (depth >= 16)
             luaL_error(L, "commons: the table stored under '%s' is nested too deeply", describeKey(key).c_str());
 
