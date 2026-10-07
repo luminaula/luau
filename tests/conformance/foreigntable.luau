@@ -181,7 +181,7 @@ local function run(minimal)
     holes[1] = 1
     holes[2] = 2
     holes[4] = 4
-    assert(#holes == 2)
+    assert(#holes == 2 or #holes == 4) -- either is a border
     local ipcount = 0
     for _ in ipairs(holes) do ipcount += 1 end
     assert(ipcount == 2)
