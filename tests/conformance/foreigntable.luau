@@ -76,23 +76,23 @@ local function run(minimal)
     t.f = false
     t.n = 1.5
     t.s = "str\0with zero"
-    t.v = vector(1, 2, 3)
+    t.v = vector.create(1, 2, 3)
     local buf = buffer.create(8)
     buffer.writeu32(buf, 0, 0xdeadbeef)
     buffer.writeu32(buf, 4, 7)
     t.buf = buf
     assert(t.b == true and t.f == false and t.n == 1.5)
     assert(t.s == "str\0with zero" and #t.s == 13)
-    assert(t.v == vector(1, 2, 3) and t.v.y == 2)
+    assert(t.v == vector.create(1, 2, 3) and t.v.y == 2)
     assert(typeof(t.buf) == "buffer" and buffer.len(t.buf) == 8)
     assert(buffer.readu32(t.buf, 0) == 0xdeadbeef and buffer.readu32(t.buf, 4) == 7)
     buffer.writeu32(buf, 0, 0)
     assert(buffer.readu32(t.buf, 0) == 0xdeadbeef) -- the host holds a copy
 
     -- nested tables
-    t.player = {hp = 100, name = "p", pos = vector(1, 2, 3), list = {10, 20, 30}}
+    t.player = {hp = 100, name = "p", pos = vector.create(1, 2, 3), list = {10, 20, 30}}
     assert(type(t.player) == "table" and typeof(t.player) == "table")
-    assert(t.player.hp == 100 and t.player.name == "p" and t.player.pos == vector(1, 2, 3))
+    assert(t.player.hp == 100 and t.player.name == "p" and t.player.pos == vector.create(1, 2, 3))
     t.player.hp -= 5
     assert(t.player.hp == 95)
     t.player.inv = {}
