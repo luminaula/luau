@@ -320,7 +320,7 @@ local function run(minimal)
     local function rget(tt, kk) return rawget(tt, kk) end
     local function meta(tt) return getmetatable(tt) end
 
-    local function exercise(mk, expectforeign)
+    local function exercise(mk, hasmeta)
         local tt = mk()
         writex(tt, 5)
         assert(readx(tt) == 5)
@@ -334,7 +334,7 @@ local function run(minimal)
         assert(len(tt) == 21 and rlen(tt) == 21)
         assert(select('#', unp(tt)) == 21)
         assert(rget(tt, "x") == 5 and rget(tt, 3) == 3)
-        assert(meta(tt) == nil)
+        assert((meta(tt) ~= nil) == (hasmeta == true))
         assert(readx(tt) == 5)
     end
 
@@ -347,7 +347,7 @@ local function run(minimal)
         for rep = 1, 40 do exercise(plain) end
         for rep = 1, 40 do exercise(foreign) end
         for rep = 1, 40 do exercise(plain) end
-        for rep = 1, 10 do exercise(framed) end
+        for rep = 1, 10 do exercise(framed, true) end
     end
 
     -- and the other way round: warm on foreign tables first
