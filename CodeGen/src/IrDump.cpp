@@ -373,6 +373,8 @@ const char* getCmdName(IrCmd cmd)
         return "CHECK_TRUTHY";
     case IrCmd::CHECK_READONLY:
         return "CHECK_READONLY";
+    case IrCmd::CHECK_NOT_FOREIGN:
+        return "CHECK_NOT_FOREIGN";
     case IrCmd::CHECK_NO_METATABLE:
         return "CHECK_NO_METATABLE";
     case IrCmd::CHECK_SAFE_ENV:

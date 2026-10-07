@@ -15,6 +15,7 @@
 
 #include "lstate.h"
 #include "lgc.h"
+#include "lforeign.h"
 
 LUAU_FASTFLAG(LuauCodegenFixBufferLenCheck)
 LUAU_FASTFLAG(LuauCIProto)
@@ -2364,6 +2365,10 @@ void IrLoweringX64::lowerInst(IrInst& inst, uint32_t index, const IrBlock& next)
     case IrCmd::CHECK_READONLY:
         build.cmp(byte[regOp(OP_A(inst)) + offsetof(LuaTable, readonly)], 0);
         jumpOrAbortOnUndef(ConditionX64::NotEqual, OP_B(inst), index, next);
+        break;
+    case IrCmd::CHECK_NOT_FOREIGN:
+        build.cmp(byte[regOp(OP_A(inst)) + offsetof(LuaTable, readonly)], FOREIGN_TABLE_FLAG);
+        jumpOrAbortOnUndef(ConditionX64::Equal, OP_B(inst), index, next);
         break;
     case IrCmd::CHECK_NO_METATABLE:
         build.cmp(qword[regOp(OP_A(inst)) + offsetof(LuaTable, metatable)], 0);

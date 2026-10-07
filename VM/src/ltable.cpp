@@ -24,6 +24,7 @@
  */
 
 #include "ltable.h"
+#include "lforeign.h"
 
 #include "lstate.h"
 #include "ldebug.h"
@@ -587,6 +588,9 @@ LuaTable* luaH_new(lua_State* L, int narray, int nhash)
 
 void luaH_free(lua_State* L, LuaTable* t, lua_Page* page)
 {
+    if (LUAU_UNLIKELY(isforeigntable(t)))
+        return luaFT_free(L, t, page);
+
     if (t->node != dummynode)
         luaM_freearray(L, t->node, sizenode(t), LuaNode, t->memcat);
     if (t->array)

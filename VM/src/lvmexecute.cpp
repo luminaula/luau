@@ -5,6 +5,7 @@
 
 #include "lstate.h"
 #include "ltable.h"
+#include "lforeign.h"
 #include "lfunc.h"
 #include "lstring.h"
 #include "lvector.h"
@@ -2817,7 +2818,7 @@ reentry:
                 VM_CASE_STKID ra = VM_REG(LUAU_INSN_A(insn));
 
                 // fast-path: ipairs/inext
-                if (cl->env->safeenv && ttistable(ra + 1) && ttisnumber(ra + 2) && nvalue(ra + 2) == 0.0)
+                if (cl->env->safeenv && ttistable(ra + 1) && ttisnumber(ra + 2) && nvalue(ra + 2) == 0.0 && !isforeigntable(hvalue(ra + 1)))
                 {
                     setnilvalue(ra);
                     // ra+1 is already the table
@@ -2840,7 +2841,7 @@ reentry:
                 VM_CASE_STKID ra = VM_REG(LUAU_INSN_A(insn));
 
                 // fast-path: pairs/next
-                if (cl->env->safeenv && ttistable(ra + 1) && ttisnil(ra + 2))
+                if (cl->env->safeenv && ttistable(ra + 1) && ttisnil(ra + 2) && !isforeigntable(hvalue(ra + 1)))
                 {
                     setnilvalue(ra);
                     // ra+1 is already the table

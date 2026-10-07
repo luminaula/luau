@@ -1471,6 +1471,7 @@ void translateInstForGPrepNext(IrBuilder& build, const Instruction* pc, int pcpo
     build.inst(IrCmd::CHECK_TAG, tagB, build.constTag(LUA_TTABLE), fallback);
     IrOp tagC = build.inst(IrCmd::LOAD_TAG, build.vmReg(ra + 2));
     build.inst(IrCmd::CHECK_TAG, tagC, build.constTag(LUA_TNIL), fallback);
+    build.inst(IrCmd::CHECK_NOT_FOREIGN, build.inst(IrCmd::LOAD_POINTER, build.vmReg(ra + 1)), fallback);
 
     build.inst(IrCmd::STORE_TAG, build.vmReg(ra), build.constTag(LUA_TNIL));
 
@@ -1500,6 +1501,7 @@ void translateInstForGPrepInext(IrBuilder& build, const Instruction* pc, int pcp
     build.inst(IrCmd::CHECK_TAG, tagB, build.constTag(LUA_TTABLE), fallback);
     IrOp tagC = build.inst(IrCmd::LOAD_TAG, build.vmReg(ra + 2));
     build.inst(IrCmd::CHECK_TAG, tagC, build.constTag(LUA_TNUMBER), fallback);
+    build.inst(IrCmd::CHECK_NOT_FOREIGN, build.inst(IrCmd::LOAD_POINTER, build.vmReg(ra + 1)), fallback);
 
     IrOp numC = build.inst(IrCmd::LOAD_DOUBLE, build.vmReg(ra + 2));
     build.inst(IrCmd::JUMP_CMP_NUM, numC, build.constDouble(0.0), build.cond(IrCondition::NotEqual), fallback, finish);

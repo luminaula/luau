@@ -11,6 +11,7 @@
 
 #include "lstate.h"
 #include "lgc.h"
+#include "lforeign.h"
 
 LUAU_FASTFLAGVARIABLE(LuauCodegenFixBufferLenCheck)
 LUAU_FASTFLAG(LuauCIProto)
@@ -2487,6 +2488,16 @@ void IrLoweringA64::lowerInst(IrInst& inst, uint32_t index, const IrBlock& next)
         RegisterA64 temp = regs.allocTemp(KindA64::w);
         build.ldrb(temp, mem(regOp(OP_A(inst)), offsetof(LuaTable, readonly)));
         build.cbnz(temp, getTargetLabel(OP_B(inst), index, fresh));
+        finalizeTargetLabel(OP_B(inst), index, fresh);
+        break;
+    }
+    case IrCmd::CHECK_NOT_FOREIGN:
+    {
+        Label fresh; // used when guard aborts execution or jumps to a VM exit
+        RegisterA64 temp = regs.allocTemp(KindA64::w);
+        build.ldrb(temp, mem(regOp(OP_A(inst)), offsetof(LuaTable, readonly)));
+        build.cmp(temp, uint16_t(FOREIGN_TABLE_FLAG));
+        build.b(ConditionA64::Equal, getTargetLabel(OP_B(inst), index, fresh));
         finalizeTargetLabel(OP_B(inst), index, fresh);
         break;
     }

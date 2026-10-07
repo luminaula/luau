@@ -1,6 +1,7 @@
 // This file is part of the Luau programming language and is licensed under MIT License; see LICENSE.txt for details
 // This code is based on Lua 5.x implementation licensed under MIT License; see lua_LICENSE.txt for details
 #include "lapi.h"
+#include "lforeign.h"
 
 #include "lbytecode.h"
 #include "lobject.h"
@@ -310,12 +311,16 @@ void lua_replace(lua_State* L, int idx)
         api_check(L, L->ci != L->base_ci);
         Closure* func = curr_func(L);
         api_check(L, ttistable(L->top - 1));
+        if (LUAU_UNLIKELY(isforeigntable(hvalue(L->top - 1))))
+            luaG_runerror(L, "cannot use a foreign table as an environment");
         func->env = hvalue(L->top - 1);
         luaC_barrier(L, func, L->top - 1);
     }
     else if (idx == LUA_GLOBALSINDEX)
     {
         api_check(L, ttistable(L->top - 1));
+        if (LUAU_UNLIKELY(isforeigntable(hvalue(L->top - 1))))
+            luaG_runerror(L, "cannot use a foreign table as an environment");
         L->gt = hvalue(L->top - 1);
     }
     else
@@ -584,6 +589,8 @@ int lua_objlen(lua_State* L, int idx)
     case LUA_TBUFFER:
         return bufvalue(o)->len;
     case LUA_TTABLE:
+        if (LUAU_UNLIKELY(isforeigntable(hvalue(o))))
+            return luaFT_len(L, foreigndata(hvalue(o)));
         return luaH_getn(hvalue(o));
     default:
         return 0;
@@ -860,6 +867,14 @@ int lua_rawgetfield(lua_State* L, int idx, const char* k)
     ensure_stack(L, 1);
     StkId t = index2addr(L, idx);
     api_check(L, ttistable(t));
+    if (LUAU_UNLIKELY(isforeigntable(hvalue(t))))
+    {
+        ForeignTableData* d = foreigndata(hvalue(t));
+        setsvalue(L, L->top, luaS_new(L, k));
+        api_incr_top(L);
+        luaFT_get(L, d);
+        return ttype(L->top - 1);
+    }
     TValue key;
     setsvalue(L, &key, luaS_new(L, k));
     setobj2s(L, L->top, luaH_getstr(hvalue(t), tsvalue(&key)));
@@ -872,6 +887,11 @@ int lua_rawget(lua_State* L, int idx)
     luaC_threadbarrier(L);
     StkId t = index2addr(L, idx);
     api_check(L, ttistable(t));
+    if (LUAU_UNLIKELY(isforeigntable(hvalue(t))))
+    {
+        luaFT_get(L, foreigndata(hvalue(t)));
+        return ttype(L->top - 1);
+    }
     setobj2s(L, L->top - 1, luaH_get(hvalue(t), L->top - 1));
     return ttype(L->top - 1);
 }
@@ -882,6 +902,14 @@ int lua_rawgeti(lua_State* L, int idx, int n)
     ensure_stack(L, 1);
     StkId t = index2addr(L, idx);
     api_check(L, ttistable(t));
+    if (LUAU_UNLIKELY(isforeigntable(hvalue(t))))
+    {
+        ForeignTableData* d = foreigndata(hvalue(t));
+        setnvalue(L->top, n);
+        api_incr_top(L);
+        luaFT_get(L, d);
+        return ttype(L->top - 1);
+    }
     setobj2s(L, L->top, luaH_getnum(hvalue(t), n));
     api_incr_top(L);
     return ttype(L->top - 1);
@@ -893,6 +921,12 @@ int lua_rawgetptagged(lua_State* L, int idx, void* p, int tag)
     ensure_stack(L, 1);
     StkId t = index2addr(L, idx);
     api_check(L, ttistable(t));
+    if (LUAU_UNLIKELY(isforeigntable(hvalue(t))))
+    {
+        setnilvalue(L->top);
+        api_incr_top(L);
+        return LUA_TNIL;
+    }
     setobj2s(L, L->top, luaH_getp(hvalue(t), p, tag));
     api_incr_top(L);
     return ttype(L->top - 1);
@@ -914,6 +948,8 @@ void lua_setreadonly(lua_State* L, int objindex, int enabled)
     api_check(L, ttistable(o));
     LuaTable* t = hvalue(o);
     api_check(L, t != hvalue(registry(L)));
+    if (LUAU_UNLIKELY(isforeigntable(t)))
+        luaG_runerror(L, "cannot change the frozen state of a foreign table");
     t->readonly = bool(enabled);
 }
 
@@ -922,7 +958,7 @@ int lua_getreadonly(lua_State* L, int objindex)
     const TValue* o = index2addr(L, objindex);
     api_check(L, ttistable(o));
     LuaTable* t = hvalue(o);
-    int res = t->readonly;
+    int res = t->readonly == 1;
     return res;
 }
 
@@ -943,7 +979,7 @@ int lua_getmetatable(lua_State* L, int objindex)
     switch (ttype(obj))
     {
     case LUA_TTABLE:
-        mt = hvalue(obj)->metatable;
+        mt = isforeigntable(hvalue(obj)) ? NULL : hvalue(obj)->metatable;
         break;
     case LUA_TUSERDATA:
         mt = uvalue(obj)->metatable;
@@ -1013,6 +1049,15 @@ void lua_rawsetfield(lua_State* L, int idx, const char* k)
     api_checknelems(L, 1);
     StkId t = index2addr(L, idx);
     api_check(L, ttistable(t));
+    if (LUAU_UNLIKELY(isforeigntable(hvalue(t))))
+    {
+        ForeignTableData* d = foreigndata(hvalue(t));
+        setsvalue(L, L->top, luaS_new(L, k));
+        api_incr_top(L);
+        lua_insert(L, -2);
+        luaFT_set(L, d);
+        return;
+    }
     if (hvalue(t)->readonly)
         luaG_readonlyerror(L);
     setobj2t(L, luaH_setstr(L, hvalue(t), luaS_new(L, k)), L->top - 1);
@@ -1025,6 +1070,8 @@ void lua_rawset(lua_State* L, int idx)
     api_checknelems(L, 2);
     StkId t = index2addr(L, idx);
     api_check(L, ttistable(t));
+    if (LUAU_UNLIKELY(isforeigntable(hvalue(t))))
+        return luaFT_set(L, foreigndata(hvalue(t)));
     if (hvalue(t)->readonly)
         luaG_readonlyerror(L);
     setobj2t(L, luaH_set(L, hvalue(t), L->top - 2), L->top - 1);
@@ -1037,6 +1084,14 @@ void lua_rawseti(lua_State* L, int idx, int n)
     api_checknelems(L, 1);
     StkId o = index2addr(L, idx);
     api_check(L, ttistable(o));
+    if (LUAU_UNLIKELY(isforeigntable(hvalue(o))))
+    {
+        ForeignTableData* d = foreigndata(hvalue(o));
+        setnvalue(L->top, n);
+        api_incr_top(L);
+        lua_insert(L, -2);
+        return luaFT_set(L, d);
+    }
     if (hvalue(o)->readonly)
         luaG_readonlyerror(L);
     setobj2t(L, luaH_setnum(L, hvalue(o), n), L->top - 1);
@@ -1049,6 +1104,8 @@ void lua_rawsetptagged(lua_State* L, int idx, void* p, int tag)
     api_checknelems(L, 1);
     StkId o = index2addr(L, idx);
     api_check(L, ttistable(o));
+    if (LUAU_UNLIKELY(isforeigntable(hvalue(o))))
+        luaG_runerror(L, "cannot use a pointer as the key of a foreign table");
     if (hvalue(o)->readonly)
         luaG_readonlyerror(L);
     setobj2t(L, luaH_setp(L, hvalue(o), p, tag), L->top - 1);
@@ -1066,11 +1123,15 @@ int lua_setmetatable(lua_State* L, int objindex)
     {
         api_check(L, ttistable(L->top - 1));
         mt = hvalue(L->top - 1);
+        if (LUAU_UNLIKELY(isforeigntable(mt)))
+            luaG_runerror(L, "cannot use a foreign table as a metatable");
     }
     switch (ttype(obj))
     {
     case LUA_TTABLE:
     {
+        if (LUAU_UNLIKELY(isforeigntable(hvalue(obj))))
+            luaG_runerror(L, "cannot set the metatable of a foreign table");
         if (hvalue(obj)->readonly)
             luaG_readonlyerror(L);
         hvalue(obj)->metatable = mt;
@@ -1102,6 +1163,8 @@ int lua_setfenv(lua_State* L, int idx)
     StkId o = index2addr(L, idx);
     api_checkvalidindex(L, o);
     api_check(L, ttistable(L->top - 1));
+    if (LUAU_UNLIKELY(isforeigntable(hvalue(L->top - 1))))
+        luaG_runerror(L, "cannot use a foreign table as an environment");
     switch (ttype(o))
     {
     case LUA_TFUNCTION:
@@ -1480,6 +1543,8 @@ int lua_next(lua_State* L, int idx)
     ensure_stack(L, 1);
     StkId t = index2addr(L, idx);
     api_check(L, ttistable(t));
+    if (LUAU_UNLIKELY(isforeigntable(hvalue(t))))
+        return luaFT_next(L, foreigndata(hvalue(t)));
     int more = luaH_next(L, hvalue(t), L->top - 1);
     if (more)
     {
@@ -1499,6 +1564,9 @@ int lua_rawiter(lua_State* L, int idx, int iter)
     api_check(L, iter >= 0);
 
     LuaTable* h = hvalue(t);
+    if (LUAU_UNLIKELY(isforeigntable(h)))
+        return luaFT_rawiter(L, foreigndata(h), iter);
+
     int sizearray = h->sizearray;
 
     // first we advance iter through the array portion
@@ -2097,6 +2165,8 @@ void lua_cleartable(lua_State* L, int idx)
     StkId t = index2addr(L, idx);
     api_check(L, ttistable(t));
     LuaTable* tt = hvalue(t);
+    if (LUAU_UNLIKELY(isforeigntable(tt)))
+        return luaFT_clear(L, foreigndata(tt));
     if (tt->readonly)
         luaG_readonlyerror(L);
     luaH_clear(tt);
@@ -2111,9 +2181,33 @@ void lua_clonetable(lua_State* L, int idx)
     StkId t = index2addr(L, idx);
     api_check(L, ttistable(t));
 
+    if (LUAU_UNLIKELY(isforeigntable(hvalue(t))))
+        return luaFT_clone(L, foreigndata(hvalue(t)));
+
     LuaTable* tt = luaH_clone(L, hvalue(t));
     sethvalue(L, L->top, tt);
     api_incr_top(L);
+}
+
+void lua_newforeigntable(lua_State* L, const lua_ForeignTableCallbacks* callbacks, void* ctx)
+{
+    api_check(L, callbacks && callbacks->get && callbacks->set && callbacks->len && callbacks->next);
+    luaC_checkGC(L);
+    luaC_threadbarrier(L);
+    ensure_stack(L, 1);
+    sethvalue(L, L->top, luaFT_new(L, callbacks, ctx));
+    api_incr_top(L);
+}
+
+int lua_isforeigntable(lua_State* L, int idx)
+{
+    return luaFT_of(index2addr(L, idx)) != NULL;
+}
+
+void* lua_toforeigntable(lua_State* L, int idx, const lua_ForeignTableCallbacks* callbacks)
+{
+    ForeignTableData* d = luaFT_of(index2addr(L, idx));
+    return (d && d->cb == callbacks) ? d->ctx : NULL;
 }
 
 lua_Callbacks* lua_callbacks(lua_State* L)
