@@ -666,6 +666,12 @@ enum class IrCmd : uint8_t
     // When undef is specified instead of a block, execution is aborted on check failure
     CHECK_READONLY,
 
+    // Guard against a foreign table, a table whose storage is owned by the host
+    // A: pointer (LuaTable)
+    // B: block/vmexit/undef
+    // When undef is specified instead of a block, execution is aborted on check failure
+    CHECK_NOT_FOREIGN,
+
     // Guard against table having a metatable
     // A: pointer (LuaTable)
     // B: block/vmexit/undef

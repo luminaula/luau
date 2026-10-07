@@ -1152,6 +1152,9 @@ static void markDeadStoresInInst(RemoveDeadStoreState& state, IrBuilder& build, 
     case IrCmd::CHECK_READONLY:
         state.checkLiveIns(OP_B(inst), index, true);
         break;
+    case IrCmd::CHECK_NOT_FOREIGN:
+        state.checkLiveIns(OP_B(inst), index, true);
+        break;
     case IrCmd::CHECK_NO_METATABLE:
         state.checkLiveIns(OP_B(inst), index, true);
         break;

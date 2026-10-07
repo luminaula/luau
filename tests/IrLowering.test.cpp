@@ -3939,6 +3939,8 @@ bb_bytecode_1:
   CHECK_SAFE_ENV exit(6)
   CHECK_TAG R3, ttable, bb_fallback_5
   CHECK_TAG R4, tnumber, bb_fallback_5
+  %18 = LOAD_POINTER R3
+  CHECK_NOT_FOREIGN %18, bb_fallback_5
   JUMP_CMP_NUM R4, 0, not_eq, bb_fallback_5, bb_6
 bb_6:
   STORE_TAG R2, tnil
@@ -3948,41 +3950,41 @@ bb_6:
   JUMP bb_bytecode_3
 bb_bytecode_2:
   CHECK_TAG R6, ttable, exit(7)
-  %28 = LOAD_POINTER R6
-  %29 = GET_SLOT_NODE_ADDR %28, 7u, K2 ('pos')
-  CHECK_SLOT_MATCH %29, K2 ('pos'), bb_fallback_7
-  %31 = LOAD_TVALUE %29, 0i
-  STORE_TVALUE R7, %31
+  %30 = LOAD_POINTER R6
+  %31 = GET_SLOT_NODE_ADDR %30, 7u, K2 ('pos')
+  CHECK_SLOT_MATCH %31, K2 ('pos'), bb_fallback_7
+  %33 = LOAD_TVALUE %31, 0i
+  STORE_TVALUE R7, %33
   JUMP bb_8
 bb_8:
   CHECK_TAG R7, tvector, exit(9)
-  %38 = LOAD_FLOAT R7, 0i
-  %39 = FLOAT_TO_NUM %38
-  STORE_DOUBLE R7, %39
+  %40 = LOAD_FLOAT R7, 0i
+  %41 = FLOAT_TO_NUM %40
+  STORE_DOUBLE R7, %41
   STORE_TAG R7, tnumber
   CHECK_TAG R1, tnumber, exit(11)
-  %46 = LOAD_DOUBLE R1
-  %48 = ADD_NUM %46, %39
-  STORE_DOUBLE R1, %48
+  %48 = LOAD_DOUBLE R1
+  %50 = ADD_NUM %48, %41
+  STORE_DOUBLE R1, %50
   JUMP bb_bytecode_3
 bb_bytecode_3:
   INTERRUPT 12u
   CHECK_GC
   CHECK_TAG R2, tnil, bb_fallback_10
-  %55 = LOAD_POINTER R3
-  %56 = LOAD_INT R4
-  %57 = GET_ARR_ADDR %55, %56
-  CHECK_ARRAY_SIZE %55, %56, bb_9
-  %59 = LOAD_TAG %57
-  JUMP_EQ_TAG %59, tnil, bb_9, bb_11
+  %57 = LOAD_POINTER R3
+  %58 = LOAD_INT R4
+  %59 = GET_ARR_ADDR %57, %58
+  CHECK_ARRAY_SIZE %57, %58, bb_9
+  %61 = LOAD_TAG %59
+  JUMP_EQ_TAG %61, tnil, bb_9, bb_11
 bb_11:
-  %61 = ADD_INT %56, 1i
-  STORE_INT R4, %61
-  %63 = INT_TO_NUM %61
-  STORE_DOUBLE R5, %63
+  %63 = ADD_INT %58, 1i
+  STORE_INT R4, %63
+  %65 = INT_TO_NUM %63
+  STORE_DOUBLE R5, %65
   STORE_TAG R5, tnumber
-  %66 = LOAD_TVALUE %57
-  STORE_TVALUE R6, %66
+  %68 = LOAD_TVALUE %59
+  STORE_TVALUE R6, %68
   JUMP bb_bytecode_2
 bb_9:
   INTERRUPT 14u

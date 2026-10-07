@@ -334,6 +334,7 @@ IrValueKind getCmdValueKind(IrCmd cmd)
     case IrCmd::CHECK_TAG:
     case IrCmd::CHECK_TRUTHY:
     case IrCmd::CHECK_READONLY:
+    case IrCmd::CHECK_NOT_FOREIGN:
     case IrCmd::CHECK_NO_METATABLE:
     case IrCmd::CHECK_SAFE_ENV:
     case IrCmd::CHECK_YIELDABLE:
