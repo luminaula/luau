@@ -364,6 +364,19 @@ local function run(minimal)
         for rep = 1, 50 do assert(readf(ft) == 200) end
     end
 
+    -- a foreign table as the __index / __newindex target of a plain table
+    do
+        local src = fill(newforeign(minimal), {"x", "y"})
+        src.name = "src"
+        local view = setmetatable({}, {__index = src})
+        assert(view.name == "src" and view[2] == "y" and rawget(view, "name") == nil)
+        local sink = newforeign(minimal)
+        local writer = setmetatable({}, {__newindex = sink})
+        writer.out = 9
+        writer[1] = "one"
+        assert(sink.out == 9 and sink[1] == "one" and rawget(writer, "out") == nil)
+    end
+
     -- larger data
     local big = newforeign(minimal)
     for ii = 1, 2000 do big[ii] = ii * 2 end
