@@ -393,6 +393,7 @@ target_sources(Luau.VM PRIVATE
     VM/src/ldblib.cpp
     VM/src/ldebug.cpp
     VM/src/ldo.cpp
+    VM/src/lforeign.cpp
     VM/src/lfunc.cpp
     VM/src/lgc.cpp
     VM/src/lgcdebug.cpp
@@ -428,6 +429,7 @@ target_sources(Luau.VM PRIVATE
     VM/src/lcommon.h
     VM/src/ldebug.h
     VM/src/ldo.h
+    VM/src/lforeign.h
     VM/src/lfunc.h
     VM/src/lgc.h
     VM/src/lmem.h

@@ -5,6 +5,7 @@
 #include "lstate.h"
 #include "lstring.h"
 #include "ltable.h"
+#include "lforeign.h"
 #include "lgc.h"
 #include "lnumutils.h"
 #include "ldo.h"
@@ -978,7 +979,7 @@ static int luauF_rawequal(lua_State* L, StkId res, TValue* arg0, int nresults, S
 
 static int luauF_rawget(lua_State* L, StkId res, TValue* arg0, int nresults, StkId args, int nparams)
 {
-    if (nparams >= 2 && nresults <= 1 && ttistable(arg0))
+    if (nparams >= 2 && nresults <= 1 && ttistable(arg0) && !isforeigntable(hvalue(arg0)))
     {
         setobj2s(L, res, luaH_get(hvalue(arg0), args));
         return 1;
@@ -1031,7 +1032,7 @@ static int luauF_tinsert(lua_State* L, StkId res, TValue* arg0, int nresults, St
 
 static int luauF_tunpack(lua_State* L, StkId res, TValue* arg0, int nresults, StkId args, int nparams)
 {
-    if (nparams >= 1 && nresults < 0 && ttistable(arg0))
+    if (nparams >= 1 && nresults < 0 && ttistable(arg0) && !isforeigntable(hvalue(arg0)))
     {
         LuaTable* t = hvalue(arg0);
         int n = -1;
@@ -1169,6 +1170,8 @@ static int luauF_rawlen(lua_State* L, StkId res, TValue* arg0, int nresults, Stk
         if (ttistable(arg0))
         {
             LuaTable* h = hvalue(arg0);
+            if (LUAU_UNLIKELY(isforeigntable(h)))
+                return -1;
             setnvalue(res, double(luaH_getn(h)));
             return 1;
         }
@@ -1214,7 +1217,11 @@ static int luauF_getmetatable(lua_State* L, StkId res, TValue* arg0, int nresult
     {
         LuaTable* mt = NULL;
         if (ttistable(arg0))
+        {
+            if (LUAU_UNLIKELY(isforeigntable(hvalue(arg0))))
+                return -1;
             mt = hvalue(arg0)->metatable;
+        }
         else if (ttisuserdata(arg0))
             mt = uvalue(arg0)->metatable;
         else
