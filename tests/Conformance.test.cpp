@@ -56,6 +56,7 @@ void luaC_validate(lua_State* L);
 #endif
 
 LUAU_FASTFLAG(DebugLuauAbortingChecks)
+LUAU_FASTFLAG(LuauFrozenMetaButterfly)
 LUAU_FASTFLAG(LuauBytecodeFold)
 LUAU_FASTFLAG(LuauEmitCallFeedback)
 LUAU_FASTINT(CodegenHeuristicsInstructionLimit)
@@ -1498,6 +1499,71 @@ TEST_CASE("ForeignTableHeapAccounting")
     lua_gc(L, LUA_GCCOLLECT, 0);
     int after = lua_gc(L, LUA_GCCOUNTB, 0) + 1024 * lua_gc(L, LUA_GCCOUNT, 0);
     CHECK(before - after == int(seen.foreignSize));
+}
+
+TEST_CASE("ForeignTableFrozenStateAndMetamethodCache")
+{
+    // the foreign mark shares the readonly byte with the frozen state and the metamethod cache of a frozen metatable;
+    // under either layout of that byte a foreign table reads as not frozen, carries no metamethod cache, and a frozen
+    // table holding metamethods reads as frozen
+    for (bool butterfly : {false, true})
+    {
+        ScopedFastFlag frozenMetaButterfly{FFlag::LuauFrozenMetaButterfly, butterfly};
+
+        StateRef globalState(luaL_newstate(), lua_close);
+        lua_State* L = globalState.get();
+
+        lua_newforeigntable(L, &countingCallbacks(), nullptr);
+        CHECK(lua_isforeigntable(L, -1));
+        CHECK(lua_getreadonly(L, -1) == 0);
+
+        lua_createtable(L, 0, 1);
+        lua_pushcfunction(L, [](lua_State* L) { return 0; }, "index");
+        lua_setfield(L, -2, "__index");
+        lua_setreadonly(L, -1, true);
+        CHECK(lua_getreadonly(L, -1) == 1);
+        CHECK(!lua_isforeigntable(L, -1));
+
+        lua_setreadonly(L, -1, false);
+        CHECK(lua_getreadonly(L, -1) == 0);
+        lua_pop(L, 1);
+
+        // the heap walk sizes a foreign table as its header and host record, with no metamethod cache
+        lua_createtable(L, 0, 0);
+        struct Seen
+        {
+            void* plain;
+            void* foreign;
+            size_t plainSize = 0;
+            size_t foreignSize = 0;
+        } seen;
+        seen.plain = const_cast<void*>(lua_topointer(L, -1));
+        seen.foreign = const_cast<void*>(lua_topointer(L, -2));
+
+        extern void luaC_enumheap(
+            lua_State * L,
+            void* context,
+            void (*node)(void* context, void* ptr, uint8_t tt, uint8_t memcat, size_t size, const char* name),
+            void (*edge)(void* context, void* from, void* to, const char* name)
+        );
+        luaC_enumheap(
+            L,
+            &seen,
+            [](void* ctx, void* gco, uint8_t tt, uint8_t memcat, size_t size, const char* name)
+            {
+                Seen& s = *static_cast<Seen*>(ctx);
+                if (gco == s.plain)
+                    s.plainSize = size;
+                if (gco == s.foreign)
+                    s.foreignSize = size;
+            },
+            [](void* ctx, void* from, void* to, const char* name) {}
+        );
+        CHECK(seen.foreignSize == seen.plainSize + 2 * sizeof(void*));
+
+        lua_pop(L, 2);
+        lua_gc(L, LUA_GCCOLLECT, 0);
+    }
 }
 
 TEST_CASE("ForeignTableOutOfMemory")

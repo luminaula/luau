@@ -1664,5 +1664,5 @@ void luaH_setreadonly(lua_State* L, LuaTable* t, bool readonly)
 
 int luaH_getreadonly(LuaTable* t)
 {
-    return t->readonly != 0 ? 1 : 0;
+    return t->readonly & 1;
 }

@@ -535,7 +535,7 @@ typedef struct LuaTable
     CommonHeader;
 
     uint8_t tmcache;    // 1<<p means tagmethod(p) is not present
-    uint8_t readonly;   // bit 0 - prohibit writes to table, bit 1 - array contains a metamethod cache
+    uint8_t readonly;   // bit 0 - prohibit writes to table, bit 1 - array contains a metamethod cache, bit 2 - foreign table (lforeign.h)
     uint8_t safeenv;    // environment doesn't share globals with other scripts
     uint8_t lsizenode;  // log2 of size of `node' array
     uint8_t nodemask8;  // (1<<lsizenode)-1, truncated to 8 bits
