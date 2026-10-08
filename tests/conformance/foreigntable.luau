@@ -31,8 +31,6 @@ local function fill(t, arr)
 end
 
 local function run(minimal)
-    local live0 = hostlive()
-
     -- the type is a table
     local t = newforeign(minimal)
     assert(type(t) == "table")
@@ -412,15 +410,18 @@ local function run(minimal)
         z.c = 2
         assert(x.a.b.c == 2)
     end
-    t, copy, big, arr, e, r, tl, st, words, ct, mv, mv2 = nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil
-    holes, rt, p, sk = nil, nil, nil, nil
+end
+
+-- collection releases the host storage of every table run made. The count is read once run has returned, because a
+-- register of run's frame the compiler did not reuse still holds whatever was last placed in it, and a live frame's
+-- registers are roots.
+for _, minimal in {false, true} do
+    local live0 = hostlive()
+    run(minimal)
     collectgarbage()
     collectgarbage()
     assert(hostlive() == live0, "leaked " .. (hostlive() - live0) .. " host tables")
 end
-
-run(false)
-run(true)
 
 -- a coroutine can use a foreign table, including across a yield
 do
