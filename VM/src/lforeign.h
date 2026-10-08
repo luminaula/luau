@@ -10,7 +10,9 @@
 // the memory right behind the LuaTable header holds a ForeignTableData that names the host's callbacks.
 // The metatable of a foreign table is a shared table that holds __index, __newindex, __len and __iter as C functions
 // running the callbacks, so every read and write that misses the empty storage ends up in the host.
-#define FOREIGN_TABLE_FLAG 2
+// The flag is bit 2 of the byte: bit 0 is the frozen state and bit 1 marks an array that holds a metamethod cache, and a
+// foreign table has neither, so the byte of a foreign table is exactly FOREIGN_TABLE_FLAG and is nonzero like a frozen one.
+#define FOREIGN_TABLE_FLAG 4
 
 struct ForeignTableData
 {

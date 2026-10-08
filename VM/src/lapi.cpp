@@ -955,7 +955,7 @@ int lua_getreadonly(lua_State* L, int objindex)
     const TValue* o = index2addr(L, objindex);
     api_check(L, ttistable(o));
     LuaTable* t = hvalue(o);
-    // A foreign table marks itself in the same byte with FOREIGN_TABLE_FLAG (2). That mark is not a frozen state:
+    // A foreign table marks itself in the same byte with FOREIGN_TABLE_FLAG (bit 2). That mark is not a frozen state:
     // the answer is 1 only for a table frozen with lua_setreadonly, and lua_setreadonly refuses a foreign table.
     if (FFlag::LuauFrozenMetaButterfly)
     {
@@ -963,7 +963,7 @@ int lua_getreadonly(lua_State* L, int objindex)
     }
     else
     {
-        int res = t->readonly == 1;
+        int res = t->readonly & 1;
         return res;
     }
 }
