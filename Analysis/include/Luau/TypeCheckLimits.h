@@ -40,9 +40,10 @@ struct TypeCheckLimits
 };
 
 // Throw TimeLimitError naming `moduleName` once the finish time of `limits` has passed, and
-// UserCancelError once its cancellation token has been requested. A pass that can run long
-// without returning to the solver's own check calls it, so the module's time limit and a
-// cancellation reach every phase of a check.
+// UserCancelError once its cancellation token has been requested. The passes whose work grows
+// with the types they meet call it: the checking passes after constraint solving, subtyping and
+// type-function reduction, so the module's time limit and a cancellation reach them as they
+// reach constraint solving.
 inline void checkTypeCheckLimits(const TypeCheckLimits& limits, const std::string& moduleName)
 {
     if (limits.finishTime && TimeTrace::getClock() > *limits.finishTime)
