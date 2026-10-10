@@ -359,6 +359,7 @@ TypeChecker2::TypeChecker2(
     , _subtyping{builtinTypes, NotNull{module->internalTypes.get()}, NotNull{&normalizer}, typeFunctionRuntime, NotNull{unifierState->iceHandler}}
     , subtyping(&_subtyping)
 {
+    _subtyping.limits = *limits;
 }
 
 bool TypeChecker2::allowsNoReturnValues(const TypePackId tp)
@@ -672,6 +673,8 @@ Scope* TypeChecker2::findInnermostScope(Location location) const
 
 void TypeChecker2::visit(AstStat* stat)
 {
+    checkTypeCheckLimits(*limits, module->name);
+
     auto pusher = pushStack(stat);
 
     if (auto s = stat->as<AstStatBlock>())
@@ -1889,6 +1892,8 @@ void TypeChecker2::visit(AstStatError* stat)
 
 void TypeChecker2::visit(AstExpr* expr, ValueContext context)
 {
+    checkTypeCheckLimits(*limits, module->name);
+
     auto StackPusher = pushStack(expr);
 
     if (auto e = expr->as<AstExprGroup>())

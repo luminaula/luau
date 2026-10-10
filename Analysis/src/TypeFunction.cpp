@@ -679,6 +679,8 @@ static FunctionGraphReductionResult reduceFunctionsInternal(
     TypeReductionReentrancyGuard _{ctx->normalizer->sharedState};
     while (!reducer.done())
     {
+        checkTypeCheckLimits(*ctx->limits, ctx->ice->moduleName);
+
         reducer.step();
 
         ++iterationCount;

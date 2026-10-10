@@ -195,6 +195,7 @@ struct NonStrictTypeChecker
         , dfg(dfg)
         , limits(limits)
     {
+        subtyping.limits = *limits;
     }
 
     std::optional<StackPusher> pushStack(AstNode* node)
@@ -275,6 +276,8 @@ struct NonStrictTypeChecker
 
     NonStrictContext visit(AstStat* stat)
     {
+        checkTypeCheckLimits(*limits, module->name);
+
         auto pusher = pushStack(stat);
         if (auto s = stat->as<AstStatBlock>())
             return visit(s);
@@ -545,6 +548,8 @@ struct NonStrictTypeChecker
 
     NonStrictContext visit(AstExpr* expr, ValueContext context)
     {
+        checkTypeCheckLimits(*limits, module->name);
+
         std::optional<RecursionCounter> _rc;
         if (FFlag::LuauAddRecursionCounterToNonStrictTypeChecker)
         {
