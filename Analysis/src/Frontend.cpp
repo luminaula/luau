@@ -1473,6 +1473,8 @@ void Frontend::checkSCCBuildQueueItem(BuildQueueItem& item)
     ModuleSCCPtr scc = item.scc;
     LUAU_ASSERT(scc->sharedArena);
 
+    double timestamp = getTimestamp();
+
     TypeCheckLimits typeCheckLimits = makeTypeCheckLimits(item.options);
 
     UnifierSharedState unifierState{NotNull{&iceHandler}};
@@ -1758,6 +1760,18 @@ void Frontend::checkSCCBuildQueueItem(BuildQueueItem& item)
     {
         for (BuildQueueModuleInfo& moduleInfo : item.modules)
             errorOnCyclicTopLevelAccess(*moduleInfo.sourceModule, moduleInfo.module, scc->members);
+    }
+
+    // The members are checked together, so each one's check took the time the SCC's did. Each is a
+    // dirty module this check checked, which customModuleCheck is called for, as it is for a module
+    // checked on its own.
+    double duration = getTimestamp() - timestamp;
+    for (BuildQueueModuleInfo& moduleInfo : item.modules)
+    {
+        moduleInfo.module->checkDurationSec = duration;
+
+        if (item.options.customModuleCheck)
+            item.options.customModuleCheck(*moduleInfo.sourceModule, *moduleInfo.module);
     }
 }
 
