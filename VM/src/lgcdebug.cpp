@@ -693,9 +693,23 @@ static void dumpobj(FILE* f, GCObject* o)
     }
 }
 
+struct DumpContext
+{
+    FILE* f;
+    global_State* g;
+};
+
 static bool dumpgco(void* context, lua_Page* page, GCObject* gco)
 {
-    FILE* f = (FILE*)context;
+    DumpContext* ctx = (DumpContext*)context;
+    FILE* f = ctx->f;
+
+    // an object the sweep has not reached yet may refer to objects it already freed
+    if (isdead(ctx->g, gco))
+    {
+        LUAU_ASSERT(ctx->g->gcstate == GCSsweep);
+        return false;
+    }
 
     dumpref(f, gco);
     fputc(':', f);
@@ -713,9 +727,11 @@ void luaC_dump(lua_State* L, void* file, const char* (*categoryName)(lua_State* 
 
     fprintf(f, "{\"objects\":{\n");
 
-    dumpgco(f, NULL, obj2gco(g->mainthread));
+    DumpContext ctx = {f, g};
 
-    luaM_visitgco(L, f, dumpgco);
+    dumpgco(&ctx, NULL, obj2gco(g->mainthread));
+
+    luaM_visitgco(L, &ctx, dumpgco);
 
     fprintf(f, "\"0\":{\"type\":\"userdata\",\"cat\":0,\"size\":0}\n"); // to avoid issues with trailing ,
     fprintf(f, "},\"roots\":{\n");
@@ -1119,7 +1135,17 @@ static void enumobj(EnumContext* ctx, GCObject* o)
 
 static bool enumgco(void* context, lua_Page* page, GCObject* gco)
 {
-    enumobj((EnumContext*)context, gco);
+    EnumContext* ctx = (EnumContext*)context;
+    global_State* g = ctx->L->global;
+
+    // an object the sweep has not reached yet may refer to objects it already freed
+    if (isdead(g, gco))
+    {
+        LUAU_ASSERT(g->gcstate == GCSsweep);
+        return false;
+    }
+
+    enumobj(ctx, gco);
     return false;
 }
 
