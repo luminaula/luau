@@ -676,6 +676,27 @@ static int tcreate(lua_State* L)
     return 1;
 }
 
+// A foreign table holds its elements in the host: each is read through lua_rawgeti, which reaches it there.
+LUAU_NOINLINE static int tfind_foreign(lua_State* L, int init)
+{
+    for (int i = init;; ++i)
+    {
+        if (lua_rawgeti(L, 1, i) == LUA_TNIL)
+            break;
+
+        if (lua_equal(L, -1, 2))
+        {
+            lua_pushinteger(L, i);
+            return 1;
+        }
+
+        lua_pop(L, 1);
+    }
+
+    lua_pushnil(L);
+    return 1;
+}
+
 static int tfind(lua_State* L)
 {
     int init = 1;
@@ -703,30 +724,14 @@ static int tfind(lua_State* L)
 
     LuaTable* t = hvalue(L->base);
 
-    if (LUAU_UNLIKELY(isforeigntable(t)))
-    {
-        for (int i = init;; ++i)
-        {
-            if (lua_rawgeti(L, 1, i) == LUA_TNIL)
-                break;
-
-            if (lua_equal(L, -1, 2))
-            {
-                lua_pushinteger(L, i);
-                return 1;
-            }
-
-            lua_pop(L, 1);
-        }
-
-        lua_pushnil(L);
-        return 1;
-    }
-
+    // A foreign table has no array part and no hash part, so it is recognised where a lookup in them misses.
     if (DFFlag::LuauTableFindImprovement)
     {
         if (init > t->sizearray && t->node == &luaH_dummynode)
         {
+            if (LUAU_UNLIKELY(isforeigntable(t)))
+                return tfind_foreign(L, init);
+
             lua_pushnil(L);
             return 1;
         }
@@ -747,7 +752,12 @@ static int tfind(lua_State* L)
     {
         const TValue* e = luaH_getnum(t, i);
         if (ttisnil(e))
+        {
+            if (LUAU_UNLIKELY(isforeigntable(t)))
+                return tfind_foreign(L, init);
+
             break;
+        }
 
         StkId v = L->base + 1;
 
